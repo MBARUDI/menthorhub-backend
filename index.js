@@ -13,7 +13,7 @@ app.use(cors()); // Libera acesso para seu site
 // DICA: O ideal é usar Variáveis de Ambiente no Render para esconder o Token,
 // mas para testar agora, pode colocar direto aqui.
 const client = new MercadoPagoConfig({ 
-    accessToken: 'COLE_SEU_ACCESS_TOKEN_AQUI' 
+    accessToken: 'APP_USR-2938703960226653-120815-b11dd2f1ea41c941cd6c43a535eb3bde-3050160102UI' 
 });
 
 // Rota de Criação do Pix
@@ -30,7 +30,7 @@ app.post('/create-payment', async (req, res) => {
                 first_name: payerName || 'Cliente'
             },
             // AQUI VOCÊ VAI COLOCAR A URL DO RENDER DEPOIS DE CRIAR LÁ
-            notification_url: 'https://SEU-APP-NO-RENDER.onrender.com/webhooks/mercadopago'
+            notification_url: 'https://menthorhub-backend.onrender.com/webhooks/mercadopago'
         };
         const result = await payment.create({ body });
         res.status(200).json({
