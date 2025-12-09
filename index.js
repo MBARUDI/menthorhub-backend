@@ -71,6 +71,53 @@ app.post('/create-payment', async (req, res) => {
     }
 });
 
+// --- ROTA DE PAGAMENTO COM CARTÃO ---
+app.post('/process-card-payment', async (req, res) => {
+    const { token, issuer_id, payment_method_id, transaction_amount, installments, payer } = req.body;
+
+    // --- VALIDAÇÃO DE ENTRADA ---
+    if (!token || !transaction_amount || !installments || !payer?.email) {
+        console.warn("⚠️ Tentativa de pagamento com cartão com dados faltando.");
+        return res.status(400).json({ error: 'Dados incompletos para processar o pagamento com cartão.' });
+    }
+
+    try {
+        const payment = new Payment(client);
+        const body = {
+            transaction_amount: Number(transaction_amount),
+            token,
+            description: 'Acesso Premium MenthorHub (Cartão)',
+            installments: Number(installments),
+            payment_method_id,
+            issuer_id,
+            payer: {
+                email: payer.email,
+                identification: {
+                    type: payer.identification.type,
+                    number: payer.identification.number
+                }
+            },
+            notification_url: notificationUrl
+        };
+
+        const result = await payment.create({ body });
+
+        // Envia uma resposta simplificada para o frontend
+        res.status(201).json({
+            id: result.id,
+            status: result.status,
+            status_detail: result.status_detail
+        });
+
+    } catch (error) {
+        console.error("❌ Erro ao processar pagamento com cartão:", error?.cause ?? error);
+
+        const errorMessage = error.cause?.error?.message || 'Erro ao processar pagamento com cartão.';
+        const statusCode = error.statusCode || 500;
+        res.status(statusCode).json({ error: errorMessage });
+    }
+});
+
 // --- ROTA DO WEBHOOK ---
 app.post('/webhooks/mercadopago', async (req, res) => {
     const { type, data } = req.body;
