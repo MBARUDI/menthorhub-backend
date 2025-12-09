@@ -123,39 +123,56 @@ app.post('/webhooks/mercadopago', async (req, res) => {
     const { type, data } = req.body;
     res.status(200).send('OK'); // Responde OK imediatamente
 
-    if (type === 'payment') {
-        console.log(`🔔 Notificação recebida. ID: ${data.id}`);
+    if (type !== 'payment') {
+        return; // Ignora notificações que não são de pagamento
+    }
 
-        try {
-            // 1. Busca o status real no Mercado Pago
-            const payment = new Payment(client);
-            const paymentData = await payment.get({ id: data.id });
+    console.log(`🔔 Notificação de pagamento recebida. ID: ${data.id}`);
 
-            // 2. Verifica se foi APROVADO
-            if (paymentData.status === 'approved') {
-                const emailCliente = paymentData.payer.email;
-                console.log(`✅ Pagamento aprovado para: ${emailCliente}`);
+    try {
+        // 1. Busca o status real no Mercado Pago para segurança
+        const payment = new Payment(client);
+        const paymentData = await payment.get({ id: data.id });
+        const emailCliente = paymentData.payer.email;
 
-                // 3. Gera Token e Libera no Supabase
-                const novoToken = 'MENTHOR-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-
-                const { error } = await supabase
-                    .from('loginmenthorhubai')
-                    .update({ 
-                        is_paid: true, 
-                        token: novoToken 
-                    })
-                    .eq('email', emailCliente);
-
-                if (error) {
-                    console.error("❌ Erro ao salvar no Supabase:", error);
-                } else {
-                    console.log("🎉 Acesso liberado com sucesso!");
-                }
-            }
-        } catch (error) {
-            console.error("Erro no processamento do Webhook:", error);
+        // 2. Verifica se o pagamento foi de fato aprovado
+        if (paymentData.status !== 'approved') {
+            console.log(`-> Status do pagamento ${data.id} é '${paymentData.status}'. Nenhuma ação necessária.`);
+            return;
         }
+
+        // 3. **IDEMPOTENCY CHECK**: Verifica se o usuário já tem acesso
+        const { data: userData, error: userError } = await supabase
+            .from('loginmenthorhubai')
+            .select('is_paid')
+            .eq('email', emailCliente)
+            .single();
+
+        if (userError && userError.code !== 'PGRST116') { // PGRST116 = row not found, which is ok
+            throw new Error(`Erro ao consultar usuário: ${userError.message}`);
+        }
+
+        if (userData?.is_paid) {
+            console.log(`-> Pagamento para ${emailCliente} já foi processado anteriormente. Ignorando.`);
+            return;
+        }
+
+        // 4. Gera Token e Libera o acesso no Supabase
+        console.log(`✅ Pagamento aprovado para: ${emailCliente}. Liberando acesso...`);
+        const novoToken = 'MENTHOR-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+        const { error: updateError } = await supabase
+            .from('loginmenthorhubai')
+            .update({ is_paid: true, token: novoToken })
+            .eq('email', emailCliente);
+
+        if (updateError) {
+            throw new Error(`Erro ao liberar acesso no Supabase: ${updateError.message}`);
+        }
+
+        console.log(`🎉 Acesso liberado com sucesso para ${emailCliente}!`);
+
+    } catch (error) {
+        console.error("❌ Erro no processamento do Webhook:", error);
     }
 });
 
