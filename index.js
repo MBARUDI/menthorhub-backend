@@ -1,6 +1,16 @@
 const express = require('express');
 const cors = require('cors');
 const { MercadoPagoConfig, Payment } = require('mercadopago');
+// ... seus imports ...
+const { createClient } = require('@supabase/supabase-js');
+
+// Configuração do Supabase
+const supabaseUrl = 'DATABASE_URL=postgresql://postgres:[Mdb07291706@]@db.godkhytkeqsnfpghtqhn.supabase.co:5432/postgres'; // (ex: https://xyz.supabase.co)
+
+// ⚠️ AQUI ESTÁ O SEGREDO: Use a chave que você copiou agora (service_role)
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdvZGtoeXRrZXFzbmZwZ2h0cWhuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NDY2ODM2OSwiZXhwIjoyMDgwMjQ0MzY5fQ.byrvMDlbPRZu6yXdZGn0wxLB1Axa5tCuQ0nfvMmfU90'; 
+
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const app = express();
 // O Render define a porta automaticamente na variável process.env.PORT
