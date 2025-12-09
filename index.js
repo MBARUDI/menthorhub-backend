@@ -1,34 +1,36 @@
+require('dotenv').config(); // Carrega variáveis se estiver rodando localmente
 const express = require('express');
 const cors = require('cors');
 const { MercadoPagoConfig, Payment } = require('mercadopago');
-// ... seus imports ...
 const { createClient } = require('@supabase/supabase-js');
 
-// Configuração do Supabase
-const supabaseUrl = 'DATABASE_URL=postgresql://postgres:[Mdb07291706@]@db.godkhytkeqsnfpghtqhn.supabase.co:5432/postgres'; // (ex: https://xyz.supabase.co)
+// --- CONFIGURAÇÕES SEGURAS ---
+// O Render vai ler essas variáveis do painel "Environment"
+const supabaseUrl = process.env.SUPABASE_URL; 
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY; 
+const accessToken = process.env.MP_ACCESS_TOKEN;
+const notificationUrl = process.env.NOTIFICATION_URL;
 
-// ⚠️ AQUI ESTÁ O SEGREDO: Use a chave que você copiou agora (service_role)
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdvZGtoeXRrZXFzbmZwZ2h0cWhuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NDY2ODM2OSwiZXhwIjoyMDgwMjQ0MzY5fQ.byrvMDlbPRZu6yXdZGn0wxLB1Axa5tCuQ0nfvMmfU90'; 
+// Validação simples para evitar erros de inicialização
+if (!supabaseUrl || !supabaseKey || !accessToken) {
+    console.error("❌ ERRO CRÍTICO: Variáveis de ambiente faltando!");
+    process.exit(1);
+}
 
+// --- INICIALIZAÇÃO DOS CLIENTES ---
 const supabase = createClient(supabaseUrl, supabaseKey);
+const client = new MercadoPagoConfig({ accessToken });
 
 const app = express();
-// O Render define a porta automaticamente na variável process.env.PORT
 const port = process.env.PORT || 3000;
 
 app.use(express.json());
-app.use(cors()); // Libera acesso para seu site
+app.use(cors());
 
-// --- CONFIGURAÇÃO ---
-// DICA: O ideal é usar Variáveis de Ambiente no Render para esconder o Token,
-// mas para testar agora, pode colocar direto aqui.
-const client = new MercadoPagoConfig({ 
-    accessToken: 'APP_USR-2938703960226653-120815-b11dd2f1ea41c941cd6c43a535eb3bde-3050160102UI' 
-});
-
-// Rota de Criação do Pix
+// --- ROTA DE CRIAÇÃO DO PIX ---
 app.post('/create-payment', async (req, res) => {
     const { payerEmail, payerName } = req.body;
+    
     try {
         const payment = new Payment(client);
         const body = {
@@ -39,29 +41,61 @@ app.post('/create-payment', async (req, res) => {
                 email: payerEmail,
                 first_name: payerName || 'Cliente'
             },
-            // AQUI VOCÊ VAI COLOCAR A URL DO RENDER DEPOIS DE CRIAR LÁ
-            notification_url: 'https://menthorhub-backend.onrender.com/webhooks/mercadopago'
+            notification_url: notificationUrl
         };
+
         const result = await payment.create({ body });
+
         res.status(200).json({
             id: result.id,
             qr_code: result.point_of_interaction.transaction_data.qr_code,
             qr_code_base64: result.point_of_interaction.transaction_data.qr_code_base64
         });
+
     } catch (error) {
-        console.error(error);
+        console.error("Erro ao criar Pix:", error);
         res.status(500).json({ error: 'Erro ao criar Pix' });
     }
 });
 
-// Rota do Webhook
+// --- ROTA DO WEBHOOK ---
 app.post('/webhooks/mercadopago', async (req, res) => {
     const { type, data } = req.body;
-    res.status(200).send('OK'); // Responde rápido
+    res.status(200).send('OK'); // Responde OK imediatamente
 
     if (type === 'payment') {
-        // Aqui entra sua lógica de verificar status e liberar o código
-        console.log("Notificação recebida:", data.id);
+        console.log(`🔔 Notificação recebida. ID: ${data.id}`);
+
+        try {
+            // 1. Busca o status real no Mercado Pago
+            const payment = new Payment(client);
+            const paymentData = await payment.get({ id: data.id });
+
+            // 2. Verifica se foi APROVADO
+            if (paymentData.status === 'approved') {
+                const emailCliente = paymentData.payer.email;
+                console.log(`✅ Pagamento aprovado para: ${emailCliente}`);
+
+                // 3. Gera Token e Libera no Supabase
+                const novoToken = 'MENTHOR-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+
+                const { error } = await supabase
+                    .from('loginmenthorhubai')
+                    .update({ 
+                        is_paid: true, 
+                        token: novoToken 
+                    })
+                    .eq('email', emailCliente);
+
+                if (error) {
+                    console.error("❌ Erro ao salvar no Supabase:", error);
+                } else {
+                    console.log("🎉 Acesso liberado com sucesso!");
+                }
+            }
+        } catch (error) {
+            console.error("Erro no processamento do Webhook:", error);
+        }
     }
 });
 
