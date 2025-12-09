@@ -27,6 +27,29 @@ const port = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
 
+// --- ROTA PARA OBTER MEIOS DE PAGAMENTO ---
+app.get('/payment-methods', async (req, res) => {
+    try {
+        // A API de PaymentMethods não está diretamente no SDK v2, então usamos um fetch seguro.
+        const response = await fetch('https://api.mercadopago.com/v1/payment_methods', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Erro ao buscar meios de pagamento: ${response.statusText}`);
+        }
+
+        const paymentMethods = await response.json();
+        res.status(200).json(paymentMethods);
+    } catch (error) {
+        console.error("❌ Erro ao obter meios de pagamento:", error);
+        res.status(500).json({ error: 'Não foi possível obter os meios de pagamento.' });
+    }
+});
+
 // --- ROTA DE CRIAÇÃO DO PIX ---
 app.post('/create-payment', async (req, res) => {
     const { payerEmail, payerName } = req.body;
@@ -115,6 +138,43 @@ app.post('/process-card-payment', async (req, res) => {
         const errorMessage = error.cause?.error?.message || 'Erro ao processar pagamento com cartão.';
         const statusCode = error.statusCode || 500;
         res.status(statusCode).json({ error: errorMessage });
+    }
+});
+
+// --- ROTA PARA CRIAR USUÁRIO DE TESTE ---
+// ATENÇÃO: Esta rota é para fins de desenvolvimento. Em produção, ela deve ser protegida ou removida.
+app.post('/create-test-user', async (req, res) => {
+    const { site_id } = req.body;
+
+    if (!site_id) {
+        return res.status(400).json({ error: 'O `site_id` é obrigatório (ex: "MLB" para Brasil).' });
+    }
+
+    try {
+        const response = await fetch('https://api.mercadopago.com/users/test', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                site_id: site_id,
+                description: `Test user for MenthorHub - ${new Date().toISOString()}`
+            })
+        });
+
+        const responseData = await response.json();
+
+        if (!response.ok) {
+            console.error("❌ Erro da API do Mercado Pago ao criar usuário de teste:", responseData);
+            throw new Error(responseData.message || `Erro ${response.status}: ${response.statusText}`);
+        }
+
+        console.log("✅ Usuário de teste criado com sucesso:", responseData);
+        res.status(201).json(responseData);
+    } catch (error) {
+        console.error("❌ Falha geral ao criar usuário de teste:", error);
+        res.status(500).json({ error: error.message || 'Não foi possível criar o usuário de teste.' });
     }
 });
 
